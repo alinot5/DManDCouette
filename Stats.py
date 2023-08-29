@@ -145,7 +145,11 @@ if __name__=="__main__":
     M=np.sum(lens)
     u=np.zeros((M,N))
     # Get the indices of the state that should be real and complex
-    [modestemp,lams]=pickle.load(open(path+'/Modes.p','rb'))
+    modes1=pickle.load(open('Modes1.p','rb'))
+    modes2=pickle.load(open('Modes2.p','rb'))
+    lams=pickle.load(open('Eigs.p','rb'))
+    modestemp=np.concatenate((modes1,modes2))
+    
     Kx=16
     Kz=16
     Ny=35 # This shouldn't change anything, but in the autoencoder code N was in the idx array! 
