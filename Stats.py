@@ -1,49 +1,33 @@
-#!/home/linot/anaconda3/envs/py38numba/bin/python3
+#! python3
 """
-Created on Wed Aug 14 2019
+Code for generating a trajectory of the DManD model at dh=18 and computing statistics of those dynamics.
 
-Dense invariant NN with tied encoder and decoder
-
-@author: Alec
+@author: Alec Linot
 """
 
 import os
 import sys
 import math
-sys.path.insert(0, '/home/linot/Couette/NODE_DampPOD/Auto_Align3/Red')
-sys.path.insert(0, '/home/floryan/odeNet/torchdiffeq')
-
 import numpy as np
 import pickle
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import pandas as pd
-
 import tensorflow as tf
 from tensorflow import keras
 import tensorflow.keras.backend as K
-
 import scipy.io
 from sklearn.utils.extmath import randomized_svd
 import buildmodel
 import tables
-
 import argparse
 import time
-
 import torch
 import torch.nn as nn
 import torch.optim as optim
-
-sys.path.insert(0, '/home/linot/Couette/Python/SBDF3/RL_Opt/Implement/newEnv/Fixed/Phase')
 from Solver import Solver
-
-###############################################################################
-# Arguments from the submit file
-###############################################################################
 from torchdiffeq import odeint_adjoint as odeint
-
 # Check if there are gpus
 device = torch.device('cuda:' + str(args.gpu) if torch.cuda.is_available() else 'cpu')
 
@@ -86,42 +70,9 @@ def Linear(N,a):
     A=np.diag(-a*np.ones(N))
     return A
 
-# This class is used for updating the gradient
-class RunningAverageMeter(object):
-    """Computes and stores the average and current value"""
-
-    def __init__(self, momentum=0.99):
-        self.momentum = momentum
-        self.reset()
-
-    def reset(self):
-        self.val = None
-        self.avg = 0
-
-    def update(self, val):
-        if self.val is None:
-            self.avg = val
-        else:
-            self.avg = self.avg * self.momentum + val * (1 - self.momentum)
-        self.val = val
-
 ###############################################################################
 # Functions
 ###############################################################################
-    
-def get_batch(t,true_y):
-    rand=np.random.choice(np.arange(np.floor(args.data_size/args.step) - args.batch_time, dtype=np.int64), args.batch_size, replace=False)
-    lens=[8000-1,8000,8000,2000,2600,8000,7100,8000,8000,2415,8000,8000,1321,8000,4126]
-    num=0
-    for i in lens:
-        num=i+num
-        rand[rand==num]=rand[rand==num]+1
-
-    s = torch.from_numpy(rand)
-    batch_y0 = true_y[s]  # (M, D)
-    batch_t = t[:args.batch_time]  # (T)
-    batch_y = torch.stack([true_y[s + i] for i in range(args.batch_time)], dim=0)  # (T, M, D)
-    return batch_y0, batch_t, batch_y
 
 # For outputting info when running on compute nodes
 def Out(text):
@@ -138,7 +89,6 @@ if __name__=="__main__":
     ###########################################################################
     # Import Data
     ###########################################################################
-    path='/home/linot/Couette/PODFFT/NoDialias_Correct_nomean2'
     N=502
     lens=[8000,8000,8000,2000,2600,8000,7100,8000,8000,2415,8000,8000,1321,8000,4126]
     dirs=[0,1,2,3,6,7,8,9,11,12,13,14,16,17,18]
@@ -149,11 +99,13 @@ if __name__=="__main__":
     modes2=pickle.load(open('Modes2.p','rb'))
     lams=pickle.load(open('Eigs.p','rb'))
     modestemp=np.concatenate((modes1,modes2))
-    
+
+    ###########################################################################
+    # Rearrange and normalize the data
+    ###########################################################################
     Kx=16
     Kz=16
-    Ny=35 # This shouldn't change anything, but in the autoencoder code N was in the idx array! 
-    # This is for identifying if a coefficient should be strictly real or complex
+    Ny=35 
     red=256
     idx=[[i,j,k] for i in range(Ny) for j in range(2*Kx-1) for k in range(Kz)]
     idx=np.asarray(idx)
@@ -194,10 +146,9 @@ if __name__=="__main__":
     Out(str(a_test.shape))
 
     ###########################################################################
-    # Autoencoder
+    # Load Autoencoder
     ###########################################################################
-    path=os.path.abspath(os.getcwd())
-    type=path.split('/')[7]
+    type='Hybrid
     encoder=True
 
     if type=='Hybrid':
@@ -214,11 +165,8 @@ if __name__=="__main__":
         encoder=False
 
     # Load the encoder
-    Auto=path.split('/')[-2][-1]
     if encoder==True:
-        model_path=path[:45]+'Red/' +type+'/'+str(buildmodel.trunc())+'/Trial'+Auto+'/model.h5'
-        model.load_weights(model_path)
-        print(model_path)
+        model.load_weights('model.h5')
         for i in range(2):
             ly='Dense_In'+str(i+1)
             encode.get_layer(ly).set_weights(model.get_layer(ly).get_weights())
@@ -246,7 +194,6 @@ if __name__=="__main__":
     true_y=torch.tensor(h_train[:,np.newaxis,:])
     true_y=true_y.type(torch.FloatTensor)
     t=np.arange(round(M*frac))
-
     t=torch.tensor(t)
     t=t.type(torch.FloatTensor)
 
@@ -256,15 +203,14 @@ if __name__=="__main__":
     func = torch.load('model.pt')
     # Convert to torch tensor
     T=5000
-    ex=-(7000+4126) # This should grab a snapshot that evolves forward for atleast 7k time units
+    ex=-(7000+4126) # This should grab a snapshot that evolves forward for at least 7k time units 
     y0=torch.tensor(h_test[ex:ex+1,np.newaxis,:])
     y0=y0.type(torch.FloatTensor)
     tt=np.arange(T)
     t=torch.tensor(tt)
     t=t.type(torch.FloatTensor)
-    
-    func=torch.load('model.pt')
-    #pickle.dump(func,open('model.p','wb'))
+
+    # Evolve the dynamics forward
     hNN = odeint(func, y0, t)
     hNN=np.squeeze(hNN.detach().numpy())
     pickle.dump([hNN,h_test[ex:ex+T,:]],open('Data.p','wb'))
@@ -278,11 +224,8 @@ if __name__=="__main__":
     plt.xlim([0,T])
     plt.savefig('Energy.png')
 
-    # Plot the learning
-    if buildmodel.trunc()<5:
-        exs=buildmodel.trunc()
-    else:
-        exs=5
+    # Plot some of the low-dimensional coordinates
+    exs=5
 
     for i in range(exs):
         plt.figure()
@@ -300,7 +243,7 @@ if __name__=="__main__":
     hNN=hNN+h_mean
     atemp=decode.predict(hNN).T
 
-    # Fix the normalizatino
+    # Fix the normalization
     atemp=atemp*ustd+umean[:,np.newaxis]
 
     # This is how you would convert back
@@ -320,14 +263,14 @@ if __name__=="__main__":
     sol=Solver(baseflow,[N[0],N[1],N[2],N[3],1],[x[1],x[0],x[2]])
 
     # Load modes and eigenvalues
-    mean=pickle.load(open('/home/linot/Couette/PODFFT/NoDialias_Correct_nomean2/mean.p','rb'))
-    [stats_true,_]=pickle.load(open('/home/linot/Couette/PODFFT/NoDialias_Correct_nomean2/Check_Stats/stats.p','rb'))
+    mean=pickle.load(open('mean.p','rb'))
+    [stats_true,_]=pickle.load(open('stats.p','rb'))
 
     us=np.zeros((N[0],N[1],N[2],N[3],T),dtype=np.complex128)
     for l in range(red):
         k=idx[sort[l],0]
         i=idx[sort[l],1]
-        if i>16: # This seems to properly accounts for the negative values
+        if i>16: # This properly accounts for the negative values
             i=i-31
         j=idx[sort[l],2]
 
@@ -400,7 +343,7 @@ if __name__=="__main__":
 
 
     pickle.dump(E,open('Energy.p','wb'))
-    [_,EPOD]=pickle.load(open('/home/linot/Couette/PODFFT/NoDialias_Correct_nomean2/Check_Stats/Energy.p','rb'))
+    [_,EPOD]=pickle.load(open('Energy.p','rb'))
     
     plt.figure(figsize=(4,4))
     plt.plot(EPOD[:,2],EPOD[:,1])
@@ -429,7 +372,7 @@ if __name__=="__main__":
     t=torch.tensor(tt)
     t=t.type(torch.FloatTensor)
     IC=1000
-    np.random.seed(2000) # Always pick the same random IC
+    np.random.seed(2000) # Always pick the same random IC for testing
 
     # This code is needed to avoid the boundary between chunks of test data
     exs=np.cumsum(lens)-int(round(M*frac))
